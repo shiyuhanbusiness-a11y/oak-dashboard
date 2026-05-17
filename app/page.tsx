@@ -1183,12 +1183,7 @@ export default function HomePage() {
     t.filterUserRole,
   ]);
 
-  const renderGlassTooltip = (props: {
-    active?: boolean;
-    payload?: Array<{ value?: number; name?: string; payload?: { name?: string; value?: number } }>;
-    label?: string;
-    total: number;
-  }) => {
+  const renderGlassTooltip = (props: any) => {
     const { active, payload, label, total } = props;
     if (!active || !payload || payload.length === 0) return null;
 
