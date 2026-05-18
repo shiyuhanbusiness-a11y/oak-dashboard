@@ -37,6 +37,11 @@ import { cn } from "@/lib/utils";
 
 type Language = "zh" | "en";
 type ChartItem = { name: string; value: number };
+type AggregatedChartData = {
+  chartData: ChartItem[];
+  excludedCount: number;
+  totalCount: number;
+};
 type InsightLatestItem = {
   query: string;
   role: string;
@@ -90,10 +95,10 @@ const ROLE_CHANGE_EVENT = "oak-role-change";
 
 const ALL_FILTER_VALUE = "__ALL__";
 const UNKNOWN_VALUE = "__UNKNOWN__";
-const OTHER_LABEL = "Other (其他)";
 const CHART_ANIMATION_MS = 650;
 const INSIGHT_COLORS = ["#0f172a", "#1d4ed8", "#0f766e", "#0e7490"];
 const FEEDBACK_COLORS = ["#1f2937", "#0f766e", "#e76f51", "#6d28d9"];
+const INVALID_DIMENSION_LABELS = new Set(["unknown", "none", "ambiguous", "other", "", "null", "undefined"]);
 
 const copy: Record<
   Language,
@@ -148,6 +153,7 @@ const copy: Record<
     emptyData: string;
     unknown: string;
     lastUpdated: string;
+    excludedBadge: (excludedCount: number, percentage: string) => string;
     dashboardFailed: (reason: string) => string;
   }
 > = {
@@ -202,6 +208,7 @@ const copy: Record<
     emptyData: "暂无可展示的数据",
     unknown: "未标注",
     lastUpdated: "最近刷新时间",
+    excludedBadge: (excludedCount, percentage) => `未分类/其他: ${excludedCount} (${percentage}%)`,
     dashboardFailed: (reason) => `看板加载失败：${reason}`,
   },
   en: {
@@ -256,6 +263,7 @@ const copy: Record<
     emptyData: "No data available",
     unknown: "Unknown",
     lastUpdated: "Last updated",
+    excludedBadge: (excludedCount, percentage) => `Unclassified / Other: ${excludedCount} (${percentage}%)`,
     dashboardFailed: (reason) => `Failed to load dashboard: ${reason}`,
   },
 };
@@ -360,25 +368,48 @@ function normalizeDimensionValue(value: string | undefined) {
   return normalized ? normalized : UNKNOWN_VALUE;
 }
 
-function aggregateAndSortData(data: Record<string, string>[], key: string): ChartItem[] {
-  const result: Record<string, number> = {};
+function isInvalidDimensionLabel(value: string) {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === UNKNOWN_VALUE.toLowerCase()) {
+    return true;
+  }
+  return INVALID_DIMENSION_LABELS.has(normalized) || normalized.startsWith("other ");
+}
+
+function aggregateAndSortData(data: Record<string, string>[], key: string): AggregatedChartData {
+  const counter = new Map<string, number>();
+  let totalCount = 0;
 
   data.forEach((row) => {
     const value = normalizeDimensionValue(row[key]);
-    result[value] = (result[value] || 0) + 1;
+    totalCount += 1;
+    counter.set(value, (counter.get(value) ?? 0) + 1);
   });
 
-  const sorted = Object.entries(result)
+  const sorted = Array.from(counter.entries())
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value);
 
-  if (sorted.length <= 3) {
-    return sorted;
+  let excludedCount = 0;
+  const validItems: ChartItem[] = [];
+
+  sorted.forEach((item) => {
+    if (isInvalidDimensionLabel(item.name)) {
+      excludedCount += item.value;
+      return;
+    }
+    validItems.push(item);
+  });
+
+  if (validItems.length > 3) {
+    excludedCount += validItems.slice(3).reduce((sum, item) => sum + item.value, 0);
   }
 
-  const topThree = sorted.slice(0, 3);
-  const otherSum = sorted.slice(3).reduce((sum, item) => sum + item.value, 0);
-  return [...topThree, { name: OTHER_LABEL, value: otherSum }];
+  return {
+    chartData: validItems.slice(0, 3),
+    excludedCount,
+    totalCount,
+  };
 }
 
 function toDisplayLabel(value: string, unknownLabel: string) {
@@ -401,10 +432,6 @@ function buildFilterOptions(rows: Record<string, string>[], key: string, allLabe
       label: toDisplayLabel(value, unknownLabel),
     })),
   ];
-}
-
-function getChartTotal(items: ChartItem[]) {
-  return items.reduce((sum, item) => sum + item.value, 0);
 }
 
 function sleep(ms: number) {
@@ -980,79 +1007,33 @@ export default function HomePage() {
     [feedbackFilters, feedbackRows]
   );
 
-  const roleData = useMemo(
-    () =>
-      aggregateAndSortData(filteredInsightRows, "User_Role").map((item) => ({
-        ...item,
-        name: toDisplayLabel(item.name, t.unknown),
-      })),
-    [filteredInsightRows, t.unknown]
-  );
-  const queryTypeData = useMemo(
-    () =>
-      aggregateAndSortData(filteredInsightRows, "Query_Type").map((item) => ({
-        ...item,
-        name: toDisplayLabel(item.name, t.unknown),
-      })),
-    [filteredInsightRows, t.unknown]
-  );
+  const roleData = useMemo(() => aggregateAndSortData(filteredInsightRows, "User_Role"), [filteredInsightRows]);
+  const queryTypeData = useMemo(() => aggregateAndSortData(filteredInsightRows, "Query_Type"), [filteredInsightRows]);
   const queryLengthData = useMemo(
-    () =>
-      aggregateAndSortData(filteredInsightRows, "Query_Length_Category").map((item) => ({
-        ...item,
-        name: toDisplayLabel(item.name, t.unknown),
-      })),
-    [filteredInsightRows, t.unknown]
+    () => aggregateAndSortData(filteredInsightRows, "Query_Length_Category"),
+    [filteredInsightRows]
   );
-  const industryData = useMemo(
-    () =>
-      aggregateAndSortData(filteredInsightRows, "Industry").map((item) => ({
-        ...item,
-        name: toDisplayLabel(item.name, t.unknown),
-      })),
-    [filteredInsightRows, t.unknown]
-  );
+  const industryData = useMemo(() => aggregateAndSortData(filteredInsightRows, "Industry"), [filteredInsightRows]);
   const sentimentData = useMemo(
-    () =>
-      aggregateAndSortData(filteredInsightRows, "User_Sentiment").map((item) => ({
-        ...item,
-        name: toDisplayLabel(item.name, t.unknown),
-      })),
-    [filteredInsightRows, t.unknown]
+    () => aggregateAndSortData(filteredInsightRows, "User_Sentiment"),
+    [filteredInsightRows]
   );
 
   const frictionData = useMemo(
-    () =>
-      aggregateAndSortData(
-        filteredFeedbackRows.filter((row) => isValidSignal(row.Friction_Signal)),
-        "Friction_Signal"
-      ).map((item) => ({
-        ...item,
-        name: toDisplayLabel(item.name, t.unknown),
-      })),
-    [filteredFeedbackRows, t.unknown]
+    () => aggregateAndSortData(filteredFeedbackRows.filter((row) => isValidSignal(row.Friction_Signal)), "Friction_Signal"),
+    [filteredFeedbackRows]
   );
   const featureData = useMemo(
-    () =>
-      aggregateAndSortData(
-        filteredFeedbackRows.filter((row) => isValidSignal(row.Feature_Request)),
-        "Feature_Request"
-      ).map((item) => ({
-        ...item,
-        name: toDisplayLabel(item.name, t.unknown),
-      })),
-    [filteredFeedbackRows, t.unknown]
+    () => aggregateAndSortData(filteredFeedbackRows.filter((row) => isValidSignal(row.Feature_Request)), "Feature_Request"),
+    [filteredFeedbackRows]
   );
   const safetyData = useMemo(
     () =>
       aggregateAndSortData(
         filteredFeedbackRows.filter((row) => isValidSignal(row.Safety_or_Out_of_Scope_Flag)),
         "Safety_or_Out_of_Scope_Flag"
-      ).map((item) => ({
-        ...item,
-        name: toDisplayLabel(item.name, t.unknown),
-      })),
-    [filteredFeedbackRows, t.unknown]
+      ),
+    [filteredFeedbackRows]
   );
 
   const insightLatestRows = useMemo<InsightLatestItem[]>(
@@ -1183,7 +1164,19 @@ export default function HomePage() {
     t.filterUserRole,
   ]);
 
-  const renderGlassTooltip = (props: any) => {
+  const renderGlassTooltip = (props: {
+    active?: boolean;
+    label?: string;
+    total: number;
+    payload?: ReadonlyArray<{
+      value?: string | number;
+      name?: string;
+      payload?: {
+        name?: string;
+        value?: string | number;
+      };
+    }>;
+  }) => {
     const { active, payload, label, total } = props;
     if (!active || !payload || payload.length === 0) return null;
 
@@ -1200,6 +1193,16 @@ export default function HomePage() {
         <p className="mb-1 font-medium text-zinc-800">{name}</p>
         <p className="text-zinc-700">数量：{value}</p>
         <p className="text-zinc-500">占比：{percentage}%</p>
+      </div>
+    );
+  };
+
+  const renderExcludedBadge = (stats: AggregatedChartData) => {
+    if (stats.excludedCount <= 0 || stats.totalCount <= 0) return null;
+    const percentage = ((stats.excludedCount / stats.totalCount) * 100).toFixed(1);
+    return (
+      <div className="rounded-full bg-secondary/30 px-2 py-0.5 text-[11px] font-medium text-muted-foreground/60">
+        {t.excludedBadge(stats.excludedCount, percentage)}
       </div>
     );
   };
@@ -1613,12 +1616,13 @@ export default function HomePage() {
                 <TabsContent value="insight">
                   <div className="grid gap-6 grid-cols-1 xl:grid-cols-2">
                     <Card className="h-full border-zinc-200/80 bg-white/80 shadow-sm">
-                      <CardHeader className="pb-2">
+                      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
                         <CardTitle className="text-sm">{t.roleChart}</CardTitle>
+                        {renderExcludedBadge(roleData)}
                       </CardHeader>
                       <CardContent className="h-full">
                         <div className="flex min-h-[300px] h-full items-center justify-center">
-                          {roleData.length === 0 ? (
+                          {roleData.chartData.length === 0 ? (
                             <div className="flex h-full w-full items-center justify-center text-sm text-zinc-500">{t.emptyData}</div>
                           ) : (
                             <div className="min-h-[300px] h-full w-full">
@@ -1626,7 +1630,7 @@ export default function HomePage() {
                                 <ResponsiveContainer width="100%" height="100%">
                                   <PieChart margin={{ top: 12, right: 16, bottom: 12, left: 16 }}>
                                     <Pie
-                                      data={roleData}
+                                      data={roleData.chartData}
                                       dataKey="value"
                                       nameKey="name"
                                       outerRadius={95}
@@ -1635,15 +1639,15 @@ export default function HomePage() {
                                       animationDuration={CHART_ANIMATION_MS}
                                       animationEasing="ease-out"
                                     >
-                                      {roleData.map((item, index) => (
+                                      {roleData.chartData.map((item, index) => (
                                         <Cell key={`role-${item.name}`} fill={insightPalette[index % insightPalette.length]} />
                                       ))}
                                     </Pie>
-                                    <Tooltip content={(props) => renderGlassTooltip({ ...props, total: getChartTotal(roleData) })} />
+                                    <Tooltip content={(props) => renderGlassTooltip({ ...props, total: roleData.totalCount })} />
                                   </PieChart>
                                 </ResponsiveContainer>
                               </div>
-                              {renderChartLegend(roleData, insightPalette)}
+                              {renderChartLegend(roleData.chartData, insightPalette)}
                             </div>
                           )}
                         </div>
@@ -1651,12 +1655,13 @@ export default function HomePage() {
                     </Card>
 
                     <Card className="h-full border-zinc-200/80 bg-white/80 shadow-sm">
-                      <CardHeader className="pb-2">
+                      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
                         <CardTitle className="text-sm">{t.queryTypeChart}</CardTitle>
+                        {renderExcludedBadge(queryTypeData)}
                       </CardHeader>
                       <CardContent className="h-full">
                         <div className="flex min-h-[300px] h-full items-center justify-center">
-                          {queryTypeData.length === 0 ? (
+                          {queryTypeData.chartData.length === 0 ? (
                             <div className="flex h-full w-full items-center justify-center text-sm text-zinc-500">{t.emptyData}</div>
                           ) : (
                             <div className="min-h-[300px] h-full w-full">
@@ -1664,7 +1669,7 @@ export default function HomePage() {
                                 <ResponsiveContainer width="100%" height="100%">
                                   <PieChart margin={{ top: 12, right: 16, bottom: 12, left: 16 }}>
                                     <Pie
-                                      data={queryTypeData}
+                                      data={queryTypeData.chartData}
                                       dataKey="value"
                                       nameKey="name"
                                       innerRadius={56}
@@ -1674,7 +1679,7 @@ export default function HomePage() {
                                       animationDuration={CHART_ANIMATION_MS}
                                       animationEasing="ease-out"
                                     >
-                                      {queryTypeData.map((item, index) => (
+                                      {queryTypeData.chartData.map((item, index) => (
                                         <Cell
                                           key={`query-type-${item.name}`}
                                           fill={insightPalette[index % insightPalette.length]}
@@ -1682,12 +1687,12 @@ export default function HomePage() {
                                       ))}
                                     </Pie>
                                     <Tooltip
-                                      content={(props) => renderGlassTooltip({ ...props, total: getChartTotal(queryTypeData) })}
+                                      content={(props) => renderGlassTooltip({ ...props, total: queryTypeData.totalCount })}
                                     />
                                   </PieChart>
                                 </ResponsiveContainer>
                               </div>
-                              {renderChartLegend(queryTypeData, insightPalette)}
+                              {renderChartLegend(queryTypeData.chartData, insightPalette)}
                             </div>
                           )}
                         </div>
@@ -1695,12 +1700,13 @@ export default function HomePage() {
                     </Card>
 
                     <Card className="h-full border-zinc-200/80 bg-white/80 shadow-sm">
-                      <CardHeader className="pb-2">
+                      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
                         <CardTitle className="text-sm">{t.queryLengthChart}</CardTitle>
+                        {renderExcludedBadge(queryLengthData)}
                       </CardHeader>
                       <CardContent className="h-full">
                         <div className="flex min-h-[300px] h-full items-center justify-center">
-                          {queryLengthData.length === 0 ? (
+                          {queryLengthData.chartData.length === 0 ? (
                             <div className="flex h-full w-full items-center justify-center text-sm text-zinc-500">{t.emptyData}</div>
                           ) : (
                             <div className="min-h-[300px] h-full w-full">
@@ -1708,7 +1714,7 @@ export default function HomePage() {
                                 <ResponsiveContainer width="100%" height="100%">
                                   <PieChart margin={{ top: 12, right: 16, bottom: 12, left: 16 }}>
                                     <Pie
-                                      data={queryLengthData}
+                                      data={queryLengthData.chartData}
                                       dataKey="value"
                                       nameKey="name"
                                       innerRadius={56}
@@ -1718,7 +1724,7 @@ export default function HomePage() {
                                       animationDuration={CHART_ANIMATION_MS}
                                       animationEasing="ease-out"
                                     >
-                                      {queryLengthData.map((item, index) => (
+                                      {queryLengthData.chartData.map((item, index) => (
                                         <Cell
                                           key={`query-length-${item.name}`}
                                           fill={insightPalette[index % insightPalette.length]}
@@ -1726,12 +1732,12 @@ export default function HomePage() {
                                       ))}
                                     </Pie>
                                     <Tooltip
-                                      content={(props) => renderGlassTooltip({ ...props, total: getChartTotal(queryLengthData) })}
+                                      content={(props) => renderGlassTooltip({ ...props, total: queryLengthData.totalCount })}
                                     />
                                   </PieChart>
                                 </ResponsiveContainer>
                               </div>
-                              {renderChartLegend(queryLengthData, insightPalette)}
+                              {renderChartLegend(queryLengthData.chartData, insightPalette)}
                             </div>
                           )}
                         </div>
@@ -1739,17 +1745,22 @@ export default function HomePage() {
                     </Card>
 
                     <Card className="h-full border-zinc-200/80 bg-white/80 shadow-sm">
-                      <CardHeader className="pb-2">
+                      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
                         <CardTitle className="text-sm">{t.industryChart}</CardTitle>
+                        {renderExcludedBadge(industryData)}
                       </CardHeader>
                       <CardContent className="h-full">
                         <div className="flex min-h-[300px] h-full items-center justify-center">
-                          {industryData.length === 0 ? (
+                          {industryData.chartData.length === 0 ? (
                             <div className="flex h-full w-full items-center justify-center text-sm text-zinc-500">{t.emptyData}</div>
                           ) : (
                             <div className="min-h-[300px] h-full w-full">
                               <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={industryData} layout="vertical" margin={{ top: 16, right: 18, bottom: 16, left: 32 }}>
+                                <BarChart
+                                  data={industryData.chartData}
+                                  layout="vertical"
+                                  margin={{ top: 16, right: 18, bottom: 16, left: 32 }}
+                                >
                                   <defs>
                                     <linearGradient id="industryGradient" x1="0" y1="0" x2="1" y2="0">
                                       <stop offset="0%" stopColor="#1d4ed8" />
@@ -1772,7 +1783,7 @@ export default function HomePage() {
                                     tickLine={false}
                                     tick={{ fontSize: 12, fill: "#52525b" }}
                                   />
-                                  <Tooltip content={(props) => renderGlassTooltip({ ...props, total: getChartTotal(industryData) })} />
+                                  <Tooltip content={(props) => renderGlassTooltip({ ...props, total: industryData.totalCount })} />
                                   <Bar
                                     dataKey="value"
                                     radius={[0, 4, 4, 0]}
@@ -1789,12 +1800,13 @@ export default function HomePage() {
                     </Card>
 
                     <Card className="h-full border-zinc-200/80 bg-white/80 shadow-sm">
-                      <CardHeader className="pb-2">
+                      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
                         <CardTitle className="text-sm">{t.sentimentChart}</CardTitle>
+                        {renderExcludedBadge(sentimentData)}
                       </CardHeader>
                       <CardContent className="h-full">
                         <div className="flex min-h-[300px] h-full items-center justify-center">
-                          {sentimentData.length === 0 ? (
+                          {sentimentData.chartData.length === 0 ? (
                             <div className="flex h-full w-full items-center justify-center text-sm text-zinc-500">{t.emptyData}</div>
                           ) : (
                             <div className="min-h-[300px] h-full w-full">
@@ -1802,7 +1814,7 @@ export default function HomePage() {
                                 <ResponsiveContainer width="100%" height="100%">
                                   <PieChart margin={{ top: 12, right: 16, bottom: 12, left: 16 }}>
                                     <Pie
-                                      data={sentimentData}
+                                      data={sentimentData.chartData}
                                       dataKey="value"
                                       nameKey="name"
                                       outerRadius={95}
@@ -1811,7 +1823,7 @@ export default function HomePage() {
                                       animationDuration={CHART_ANIMATION_MS}
                                       animationEasing="ease-out"
                                     >
-                                      {sentimentData.map((item, index) => (
+                                      {sentimentData.chartData.map((item, index) => (
                                         <Cell
                                           key={`sentiment-${item.name}`}
                                           fill={insightPalette[index % insightPalette.length]}
@@ -1819,12 +1831,12 @@ export default function HomePage() {
                                       ))}
                                     </Pie>
                                     <Tooltip
-                                      content={(props) => renderGlassTooltip({ ...props, total: getChartTotal(sentimentData) })}
+                                      content={(props) => renderGlassTooltip({ ...props, total: sentimentData.totalCount })}
                                     />
                                   </PieChart>
                                 </ResponsiveContainer>
                               </div>
-                              {renderChartLegend(sentimentData, insightPalette)}
+                              {renderChartLegend(sentimentData.chartData, insightPalette)}
                             </div>
                           )}
                         </div>
@@ -1875,17 +1887,22 @@ export default function HomePage() {
                 <TabsContent value="feedback">
                   <div className="grid gap-6 grid-cols-1 xl:grid-cols-2">
                     <Card className="h-full border-zinc-200/80 bg-white/80 shadow-sm xl:col-span-2">
-                      <CardHeader className="pb-2">
+                      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
                         <CardTitle className="text-sm">{t.frictionChart}</CardTitle>
+                        {renderExcludedBadge(frictionData)}
                       </CardHeader>
                       <CardContent className="h-full">
                         <div className="flex min-h-[300px] h-full items-center justify-center">
-                          {frictionData.length === 0 ? (
+                          {frictionData.chartData.length === 0 ? (
                             <div className="flex h-full w-full items-center justify-center text-sm text-zinc-500">{t.emptyData}</div>
                           ) : (
                             <div className="min-h-[300px] h-full w-full">
                               <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={frictionData} layout="vertical" margin={{ top: 16, right: 18, bottom: 16, left: 32 }}>
+                                <BarChart
+                                  data={frictionData.chartData}
+                                  layout="vertical"
+                                  margin={{ top: 16, right: 18, bottom: 16, left: 32 }}
+                                >
                                   <defs>
                                     <linearGradient id="frictionGradient" x1="0" y1="0" x2="1" y2="0">
                                       <stop offset="0%" stopColor="#1d3557" />
@@ -1908,7 +1925,7 @@ export default function HomePage() {
                                     tickLine={false}
                                     tick={{ fontSize: 12, fill: "#52525b" }}
                                   />
-                                  <Tooltip content={(props) => renderGlassTooltip({ ...props, total: getChartTotal(frictionData) })} />
+                                  <Tooltip content={(props) => renderGlassTooltip({ ...props, total: frictionData.totalCount })} />
                                   <Bar
                                     dataKey="value"
                                     radius={[0, 4, 4, 0]}
@@ -1925,12 +1942,13 @@ export default function HomePage() {
                     </Card>
 
                     <Card className="h-full border-zinc-200/80 bg-white/80 shadow-sm">
-                      <CardHeader className="pb-2">
+                      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
                         <CardTitle className="text-sm">{t.featureChart}</CardTitle>
+                        {renderExcludedBadge(featureData)}
                       </CardHeader>
                       <CardContent className="h-full">
                         <div className="flex min-h-[300px] h-full items-center justify-center">
-                          {featureData.length === 0 ? (
+                          {featureData.chartData.length === 0 ? (
                             <div className="flex h-full w-full items-center justify-center text-sm text-zinc-500">{t.emptyData}</div>
                           ) : (
                             <div className="min-h-[300px] h-full w-full">
@@ -1938,7 +1956,7 @@ export default function HomePage() {
                                 <ResponsiveContainer width="100%" height="100%">
                                   <PieChart margin={{ top: 12, right: 16, bottom: 12, left: 16 }}>
                                     <Pie
-                                      data={featureData}
+                                      data={featureData.chartData}
                                       dataKey="value"
                                       nameKey="name"
                                       innerRadius={56}
@@ -1948,15 +1966,15 @@ export default function HomePage() {
                                       animationDuration={CHART_ANIMATION_MS}
                                       animationEasing="ease-out"
                                     >
-                                      {featureData.map((item, index) => (
+                                      {featureData.chartData.map((item, index) => (
                                         <Cell key={`feature-${item.name}`} fill={feedbackPalette[index % feedbackPalette.length]} />
                                       ))}
                                     </Pie>
-                                    <Tooltip content={(props) => renderGlassTooltip({ ...props, total: getChartTotal(featureData) })} />
+                                    <Tooltip content={(props) => renderGlassTooltip({ ...props, total: featureData.totalCount })} />
                                   </PieChart>
                                 </ResponsiveContainer>
                               </div>
-                              {renderChartLegend(featureData, feedbackPalette)}
+                              {renderChartLegend(featureData.chartData, feedbackPalette)}
                             </div>
                           )}
                         </div>
@@ -1964,12 +1982,13 @@ export default function HomePage() {
                     </Card>
 
                     <Card className="h-full border-zinc-200/80 bg-white/80 shadow-sm">
-                      <CardHeader className="pb-2">
+                      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
                         <CardTitle className="text-sm">{t.safetyChart}</CardTitle>
+                        {renderExcludedBadge(safetyData)}
                       </CardHeader>
                       <CardContent className="h-full">
                         <div className="flex min-h-[300px] h-full items-center justify-center">
-                          {safetyData.length === 0 ? (
+                          {safetyData.chartData.length === 0 ? (
                             <div className="flex h-full w-full items-center justify-center text-sm text-zinc-500">{t.emptyData}</div>
                           ) : (
                             <div className="min-h-[300px] h-full w-full">
@@ -1977,7 +1996,7 @@ export default function HomePage() {
                                 <ResponsiveContainer width="100%" height="100%">
                                   <PieChart margin={{ top: 12, right: 16, bottom: 12, left: 16 }}>
                                     <Pie
-                                      data={safetyData}
+                                      data={safetyData.chartData}
                                       dataKey="value"
                                       nameKey="name"
                                       outerRadius={95}
@@ -1986,15 +2005,15 @@ export default function HomePage() {
                                       animationDuration={CHART_ANIMATION_MS}
                                       animationEasing="ease-out"
                                     >
-                                      {safetyData.map((item, index) => (
+                                      {safetyData.chartData.map((item, index) => (
                                         <Cell key={`safety-${item.name}`} fill={feedbackPalette[index % feedbackPalette.length]} />
                                       ))}
                                     </Pie>
-                                    <Tooltip content={(props) => renderGlassTooltip({ ...props, total: getChartTotal(safetyData) })} />
+                                    <Tooltip content={(props) => renderGlassTooltip({ ...props, total: safetyData.totalCount })} />
                                   </PieChart>
                                 </ResponsiveContainer>
                               </div>
-                              {renderChartLegend(safetyData, feedbackPalette)}
+                              {renderChartLegend(safetyData.chartData, feedbackPalette)}
                             </div>
                           )}
                         </div>
