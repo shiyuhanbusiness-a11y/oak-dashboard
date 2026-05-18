@@ -1166,14 +1166,14 @@ export default function HomePage() {
 
   const renderGlassTooltip = (props: {
     active?: boolean;
-    label?: string;
+    label?: string | number;
     total: number;
     payload?: ReadonlyArray<{
-      value?: string | number;
-      name?: string;
+      value?: string | number | ReadonlyArray<string | number>;
+      name?: string | number;
       payload?: {
-        name?: string;
-        value?: string | number;
+        name?: string | number;
+        value?: string | number | ReadonlyArray<string | number>;
       };
     }>;
   }) => {
@@ -1182,7 +1182,9 @@ export default function HomePage() {
 
     const current = payload[0];
     const value = Number(current.value ?? current.payload?.value ?? 0);
-    const name = formatMetricLabel(current.name ?? current.payload?.name ?? label ?? "-");
+    const labelText = label === undefined ? "-" : String(label);
+    const rawName = current.name ?? current.payload?.name ?? labelText;
+    const name = formatMetricLabel(String(rawName));
     const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : "0.0";
 
     return (
