@@ -687,7 +687,7 @@ export default function HomePage() {
           successCount += 1;
         }
 
-        await sleep(4500);
+        await sleep(12000);
 
         const done = index + 1;
         setSubmittedCount(done);
@@ -701,7 +701,7 @@ export default function HomePage() {
         });
 
         failedCount += 1;
-        await sleep(4500);
+        await sleep(12000);
 
         const done = index + 1;
         setSubmittedCount(done);
