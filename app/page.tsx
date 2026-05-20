@@ -12,7 +12,6 @@ import {
   RefreshCcw,
   Send,
   UploadCloud,
-  X,
 } from "lucide-react";
 import {
   Bar,
@@ -31,7 +30,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
@@ -42,37 +40,26 @@ type AggregatedChartData = {
   excludedCount: number;
   totalCount: number;
 };
-type InsightLatestItem = {
-  query: string;
-  role: string;
-  industry: string;
-  sentiment: string;
-};
-type FeedbackLatestItem = {
-  query: string;
-  frictionSignal: string;
-  featureRequest: string;
-};
-type InsightFilters = {
+type GlobalFilters = {
   userRole: string;
   industry: string;
   sentiment: string;
-  queryLength: string;
-};
-type FeedbackFilters = {
   frictionSignal: string;
+  queryType: string;
+  queryLength: string;
+  language: string;
+  useCase: string;
   featureRequest: string;
+  outputFormat: string;
+  outputLanguageRegister: string;
+  safetyFlag: string;
 };
+type GlobalFilterKey = keyof GlobalFilters;
 type FilterOption = {
   value: string;
   label: string;
 };
-type ActiveFilterChip = {
-  key: string;
-  label: string;
-  value: string;
-  onRemove: () => void;
-};
+type MergedRow = Record<string, string> & { _joinKey: string };
 type UserRole = "engineer" | "analyst";
 type ProcessApiError = {
   error?: string;
@@ -96,9 +83,23 @@ const ROLE_CHANGE_EVENT = "oak-role-change";
 const ALL_FILTER_VALUE = "__ALL__";
 const UNKNOWN_VALUE = "__UNKNOWN__";
 const CHART_ANIMATION_MS = 650;
-const INSIGHT_COLORS = ["#0f172a", "#1d4ed8", "#0f766e", "#0e7490"];
-const FEEDBACK_COLORS = ["#1f2937", "#0f766e", "#e76f51", "#6d28d9"];
-const INVALID_DIMENSION_LABELS = new Set(["unknown", "none", "ambiguous", "other", "", "null", "undefined"]);
+const INSIGHT_COLORS = ["#0f172a", "#1e3a8a", "#0f766e", "#334155", "#155e75", "#6d28d9", "#0e7490", "#374151", "#1d4ed8", "#0369a1"];
+const FEEDBACK_COLORS = ["#1f2937", "#0f766e", "#1e40af", "#0c4a6e", "#4c1d95", "#475569", "#14532d", "#155e75", "#1d4ed8", "#6b7280"];
+const INVALID_DIMENSION_LABELS = new Set(["unknown", "none", "ambiguous", "other", "others", "", "null", "undefined", "未标注"]);
+const FILTER_FIELD_MAP: Record<GlobalFilterKey, string> = {
+  userRole: "User_Role",
+  industry: "Industry",
+  sentiment: "User_Sentiment",
+  frictionSignal: "Friction_Signal",
+  queryType: "Query_Type",
+  queryLength: "Query_Length_Category",
+  language: "Language",
+  useCase: "Use_Case",
+  featureRequest: "Feature_Request",
+  outputFormat: "Output_Format",
+  outputLanguageRegister: "Output_Language_Register",
+  safetyFlag: "Safety_or_Out_of_Scope_Flag",
+};
 
 const copy: Record<
   Language,
@@ -130,13 +131,21 @@ const copy: Record<
     filterIndustry: string;
     filterSentiment: string;
     filterQueryLength: string;
+    filterQueryType: string;
+    filterLanguage: string;
+    filterUseCase: string;
     filterFrictionSignal: string;
     filterFeatureRequest: string;
+    filterOutputFormat: string;
+    filterOutputLanguageRegister: string;
+    filterSafetyFlag: string;
     activeFilters: string;
     clearFilters: string;
     roleChart: string;
     queryTypeChart: string;
     queryLengthChart: string;
+    languageChart: string;
+    useCaseChart: string;
     industryChart: string;
     sentimentChart: string;
     frictionChart: string;
@@ -185,13 +194,21 @@ const copy: Record<
     filterIndustry: "行业 (Industry)",
     filterSentiment: "情绪 (User_Sentiment)",
     filterQueryLength: "查询长度分层 (Query_Length_Category)",
+    filterQueryType: "查询类型 (Query_Type)",
+    filterLanguage: "提问语种 (Language)",
+    filterUseCase: "使用场景 (Use_Case)",
     filterFrictionSignal: "痛点类型 (Friction_Signal)",
     filterFeatureRequest: "新功能需求 (Feature_Request)",
+    filterOutputFormat: "输出格式 (Output_Format)",
+    filterOutputLanguageRegister: "输出语言风格 (Output_Language_Register)",
+    filterSafetyFlag: "异常拦截 (Safety_or_Out_of_Scope_Flag)",
     activeFilters: "已生效筛选",
     clearFilters: "清空筛选",
     roleChart: "User_Role 分布",
     queryTypeChart: "Query_Type 分布",
     queryLengthChart: "Query_Length_Category 查询长度分层",
+    languageChart: "Language 提问语种分布",
+    useCaseChart: "Use_Case 使用场景分布",
     industryChart: "Industry 分布",
     sentimentChart: "User_Sentiment 情绪大盘",
     frictionChart: "Friction_Signal 痛点分布",
@@ -236,17 +253,25 @@ const copy: Record<
     feedbackTab: "Product Feedback",
     filterConsole: "Global Filter Console",
     filterAll: "All",
-    filterUserRole: "User Role (User_Role)",
+    filterUserRole: "User Role",
     filterIndustry: "Industry",
-    filterSentiment: "User Sentiment",
-    filterQueryLength: "Query Length (Query_Length_Category)",
+    filterSentiment: "Sentiment",
+    filterQueryLength: "Query Length",
+    filterQueryType: "Query Type",
+    filterLanguage: "Language",
+    filterUseCase: "Use Case",
     filterFrictionSignal: "Friction Signal",
     filterFeatureRequest: "Feature Request",
+    filterOutputFormat: "Output Format",
+    filterOutputLanguageRegister: "Output Register",
+    filterSafetyFlag: "Safety Flag",
     activeFilters: "Active Filters",
     clearFilters: "Clear Filters",
     roleChart: "User_Role Distribution",
     queryTypeChart: "Query_Type Distribution",
     queryLengthChart: "Query_Length_Category Distribution",
+    languageChart: "Language Distribution",
+    useCaseChart: "Use_Case Distribution",
     industryChart: "Industry Distribution",
     sentimentChart: "User_Sentiment Overview",
     frictionChart: "Friction_Signal Distribution",
@@ -355,14 +380,6 @@ function subscribeRole(onStoreChange: () => void) {
   };
 }
 
-function isValidSignal(value: string | undefined) {
-  if (!value) return false;
-  const normalized = value.trim();
-  if (!normalized) return false;
-  const lower = normalized.toLowerCase();
-  return lower !== "none" && lower !== "undefined";
-}
-
 function normalizeDimensionValue(value: string | undefined) {
   const normalized = String(value ?? "").trim();
   return normalized ? normalized : UNKNOWN_VALUE;
@@ -401,12 +418,8 @@ function aggregateAndSortData(data: Record<string, string>[], key: string): Aggr
     validItems.push(item);
   });
 
-  if (validItems.length > 3) {
-    excludedCount += validItems.slice(3).reduce((sum, item) => sum + item.value, 0);
-  }
-
   return {
-    chartData: validItems.slice(0, 3),
+    chartData: validItems,
     excludedCount,
     totalCount,
   };
@@ -420,10 +433,45 @@ function formatMetricLabel(value: string) {
   return value.replace(/_/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function createRowsWithJoinKey(rows: Record<string, string>[]) {
+  const occurrenceMap = new Map<string, number>();
+  return rows.map((row) => {
+    const query = String(row.Original_Query ?? "").trim();
+    const currentIndex = occurrenceMap.get(query) ?? 0;
+    occurrenceMap.set(query, currentIndex + 1);
+    return {
+      ...row,
+      _joinKey: `${query}_${currentIndex}`,
+    };
+  });
+}
+
+function mergeByJoinKey(insightRows: Record<string, string>[], feedbackRows: Record<string, string>[]): MergedRow[] {
+  const insightWithJoinKey = createRowsWithJoinKey(insightRows);
+  const feedbackWithJoinKey = createRowsWithJoinKey(feedbackRows);
+  const feedbackMap = new Map(feedbackWithJoinKey.map((row) => [row._joinKey, row]));
+
+  return insightWithJoinKey.map((insightRow) => ({
+    ...feedbackMap.get(insightRow._joinKey),
+    ...insightRow,
+    _joinKey: insightRow._joinKey,
+  }));
+}
+
 function buildFilterOptions(rows: Record<string, string>[], key: string, allLabel: string, unknownLabel: string): FilterOption[] {
-  const uniqueValues = Array.from(new Set(rows.map((row) => normalizeDimensionValue(row[key])))).sort((a, b) =>
-    a.localeCompare(b, "zh-CN")
-  );
+  const counter = new Map<string, number>();
+  rows.forEach((row) => {
+    const value = normalizeDimensionValue(row[key]);
+    if (isInvalidDimensionLabel(value)) return;
+    counter.set(value, (counter.get(value) ?? 0) + 1);
+  });
+
+  const uniqueValues = Array.from(counter.entries())
+    .sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return a[0].localeCompare(b[0], "zh-CN");
+    })
+    .map(([value]) => value);
 
   return [
     { value: ALL_FILTER_VALUE, label: allLabel },
@@ -461,19 +509,22 @@ export default function HomePage() {
 
   const [isDashboardLoading, setIsDashboardLoading] = useState(false);
   const [dashboardError, setDashboardError] = useState("");
-  const [insightRows, setInsightRows] = useState<Record<string, string>[]>([]);
-  const [feedbackRows, setFeedbackRows] = useState<Record<string, string>[]>([]);
-  const [lastUpdated, setLastUpdated] = useState("");
+  const [mergedRows, setMergedRows] = useState<MergedRow[]>([]);
   const [activeTab, setActiveTab] = useState("insight");
-  const [insightFilters, setInsightFilters] = useState<InsightFilters>({
+  const [isFilterExpanded, setIsFilterExpanded] = useState(true);
+  const [globalFilters, setGlobalFilters] = useState<GlobalFilters>({
     userRole: ALL_FILTER_VALUE,
     industry: ALL_FILTER_VALUE,
     sentiment: ALL_FILTER_VALUE,
-    queryLength: ALL_FILTER_VALUE,
-  });
-  const [feedbackFilters, setFeedbackFilters] = useState<FeedbackFilters>({
     frictionSignal: ALL_FILTER_VALUE,
+    queryType: ALL_FILTER_VALUE,
+    queryLength: ALL_FILTER_VALUE,
+    language: ALL_FILTER_VALUE,
+    useCase: ALL_FILTER_VALUE,
     featureRequest: ALL_FILTER_VALUE,
+    outputFormat: ALL_FILTER_VALUE,
+    outputLanguageRegister: ALL_FILTER_VALUE,
+    safetyFlag: ALL_FILTER_VALUE,
   });
 
   const t = copy[language];
@@ -723,20 +774,14 @@ export default function HomePage() {
         parseCsvByUrl(FEEDBACK_CSV_URL),
       ]);
 
-      setInsightRows(insightRows);
-      setFeedbackRows(feedbackRows);
-      setLastUpdated(
-        new Date().toLocaleString(language === "zh" ? "zh-CN" : "en-US", {
-          hour12: false,
-        })
-      );
+      setMergedRows(mergeByJoinKey(insightRows, feedbackRows));
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Unknown error";
       setDashboardError(t.dashboardFailed(reason));
     } finally {
       setIsDashboardLoading(false);
     }
-  }, [language, t]);
+  }, [t]);
 
   useEffect(() => {
     if (!role) return;
@@ -747,422 +792,106 @@ export default function HomePage() {
     return () => clearTimeout(timer);
   }, [fetchDashboard, role]);
 
-  const insightRowsForRoleOptions = useMemo(
-    () =>
-      insightRows.filter((row) => {
-        const byIndustry =
-          insightFilters.industry === ALL_FILTER_VALUE ||
-          normalizeDimensionValue(row.Industry) === insightFilters.industry;
-        const bySentiment =
-          insightFilters.sentiment === ALL_FILTER_VALUE ||
-          normalizeDimensionValue(row.User_Sentiment) === insightFilters.sentiment;
-        const byQueryLength =
-          insightFilters.queryLength === ALL_FILTER_VALUE ||
-          normalizeDimensionValue(row.Query_Length_Category) === insightFilters.queryLength;
-        return byIndustry && bySentiment && byQueryLength;
-      }),
-    [insightFilters.industry, insightFilters.queryLength, insightFilters.sentiment, insightRows]
-  );
-  const insightRowsForIndustryOptions = useMemo(
-    () =>
-      insightRows.filter((row) => {
-        const byRole =
-          insightFilters.userRole === ALL_FILTER_VALUE ||
-          normalizeDimensionValue(row.User_Role) === insightFilters.userRole;
-        const bySentiment =
-          insightFilters.sentiment === ALL_FILTER_VALUE ||
-          normalizeDimensionValue(row.User_Sentiment) === insightFilters.sentiment;
-        const byQueryLength =
-          insightFilters.queryLength === ALL_FILTER_VALUE ||
-          normalizeDimensionValue(row.Query_Length_Category) === insightFilters.queryLength;
-        return byRole && bySentiment && byQueryLength;
-      }),
-    [insightFilters.queryLength, insightFilters.sentiment, insightFilters.userRole, insightRows]
-  );
-  const insightRowsForSentimentOptions = useMemo(
-    () =>
-      insightRows.filter((row) => {
-        const byRole =
-          insightFilters.userRole === ALL_FILTER_VALUE ||
-          normalizeDimensionValue(row.User_Role) === insightFilters.userRole;
-        const byIndustry =
-          insightFilters.industry === ALL_FILTER_VALUE ||
-          normalizeDimensionValue(row.Industry) === insightFilters.industry;
-        const byQueryLength =
-          insightFilters.queryLength === ALL_FILTER_VALUE ||
-          normalizeDimensionValue(row.Query_Length_Category) === insightFilters.queryLength;
-        return byRole && byIndustry && byQueryLength;
-      }),
-    [insightFilters.industry, insightFilters.queryLength, insightFilters.userRole, insightRows]
-  );
-  const insightRowsForQueryLengthOptions = useMemo(
-    () =>
-      insightRows.filter((row) => {
-        const byRole =
-          insightFilters.userRole === ALL_FILTER_VALUE ||
-          normalizeDimensionValue(row.User_Role) === insightFilters.userRole;
-        const byIndustry =
-          insightFilters.industry === ALL_FILTER_VALUE ||
-          normalizeDimensionValue(row.Industry) === insightFilters.industry;
-        const bySentiment =
-          insightFilters.sentiment === ALL_FILTER_VALUE ||
-          normalizeDimensionValue(row.User_Sentiment) === insightFilters.sentiment;
-        return byRole && byIndustry && bySentiment;
-      }),
-    [insightFilters.industry, insightFilters.sentiment, insightFilters.userRole, insightRows]
-  );
-
-  const feedbackRowsForFrictionOptions = useMemo(
-    () =>
-      feedbackRows.filter((row) => {
-        if (!isValidSignal(row.Friction_Signal)) return false;
-        const byFeature =
-          feedbackFilters.featureRequest === ALL_FILTER_VALUE ||
-          normalizeDimensionValue(row.Feature_Request) === feedbackFilters.featureRequest;
-        return byFeature;
-      }),
-    [feedbackFilters.featureRequest, feedbackRows]
-  );
-  const feedbackRowsForFeatureOptions = useMemo(
-    () =>
-      feedbackRows.filter((row) => {
-        if (!isValidSignal(row.Feature_Request)) return false;
-        const byFriction =
-          feedbackFilters.frictionSignal === ALL_FILTER_VALUE ||
-          normalizeDimensionValue(row.Friction_Signal) === feedbackFilters.frictionSignal;
-        return byFriction;
-      }),
-    [feedbackFilters.frictionSignal, feedbackRows]
-  );
-
-  const insightRoleOptions = useMemo(
-    () => buildFilterOptions(insightRowsForRoleOptions, "User_Role", t.filterAll, t.unknown),
-    [insightRowsForRoleOptions, t.filterAll, t.unknown]
-  );
-  const insightIndustryOptions = useMemo(
-    () => buildFilterOptions(insightRowsForIndustryOptions, "Industry", t.filterAll, t.unknown),
-    [insightRowsForIndustryOptions, t.filterAll, t.unknown]
-  );
-  const insightSentimentOptions = useMemo(
-    () => buildFilterOptions(insightRowsForSentimentOptions, "User_Sentiment", t.filterAll, t.unknown),
-    [insightRowsForSentimentOptions, t.filterAll, t.unknown]
-  );
-  const insightQueryLengthOptions = useMemo(
-    () => buildFilterOptions(insightRowsForQueryLengthOptions, "Query_Length_Category", t.filterAll, t.unknown),
-    [insightRowsForQueryLengthOptions, t.filterAll, t.unknown]
-  );
-  const feedbackFrictionOptions = useMemo(
-    () => buildFilterOptions(feedbackRowsForFrictionOptions, "Friction_Signal", t.filterAll, t.unknown),
-    [feedbackRowsForFrictionOptions, t.filterAll, t.unknown]
-  );
-  const feedbackFeatureOptions = useMemo(
-    () => buildFilterOptions(feedbackRowsForFeatureOptions, "Feature_Request", t.filterAll, t.unknown),
-    [feedbackRowsForFeatureOptions, t.filterAll, t.unknown]
-  );
-
-  const sanitizeInsightFilters = useCallback(
-    (next: InsightFilters): InsightFilters => {
-      const validRoles = new Set(
-        insightRows
-          .filter((row) => {
-            const byIndustry =
-              next.industry === ALL_FILTER_VALUE || normalizeDimensionValue(row.Industry) === next.industry;
-            const bySentiment =
-              next.sentiment === ALL_FILTER_VALUE || normalizeDimensionValue(row.User_Sentiment) === next.sentiment;
-            const byQueryLength =
-              next.queryLength === ALL_FILTER_VALUE ||
-              normalizeDimensionValue(row.Query_Length_Category) === next.queryLength;
-            return byIndustry && bySentiment && byQueryLength;
-          })
-          .map((row) => normalizeDimensionValue(row.User_Role))
-      );
-      const validIndustries = new Set(
-        insightRows
-          .filter((row) => {
-            const byRole =
-              next.userRole === ALL_FILTER_VALUE || normalizeDimensionValue(row.User_Role) === next.userRole;
-            const bySentiment =
-              next.sentiment === ALL_FILTER_VALUE || normalizeDimensionValue(row.User_Sentiment) === next.sentiment;
-            const byQueryLength =
-              next.queryLength === ALL_FILTER_VALUE ||
-              normalizeDimensionValue(row.Query_Length_Category) === next.queryLength;
-            return byRole && bySentiment && byQueryLength;
-          })
-          .map((row) => normalizeDimensionValue(row.Industry))
-      );
-      const validSentiments = new Set(
-        insightRows
-          .filter((row) => {
-            const byRole =
-              next.userRole === ALL_FILTER_VALUE || normalizeDimensionValue(row.User_Role) === next.userRole;
-            const byIndustry =
-              next.industry === ALL_FILTER_VALUE || normalizeDimensionValue(row.Industry) === next.industry;
-            const byQueryLength =
-              next.queryLength === ALL_FILTER_VALUE ||
-              normalizeDimensionValue(row.Query_Length_Category) === next.queryLength;
-            return byRole && byIndustry && byQueryLength;
-          })
-          .map((row) => normalizeDimensionValue(row.User_Sentiment))
-      );
-      const validQueryLengths = new Set(
-        insightRows
-          .filter((row) => {
-            const byRole =
-              next.userRole === ALL_FILTER_VALUE || normalizeDimensionValue(row.User_Role) === next.userRole;
-            const byIndustry =
-              next.industry === ALL_FILTER_VALUE || normalizeDimensionValue(row.Industry) === next.industry;
-            const bySentiment =
-              next.sentiment === ALL_FILTER_VALUE ||
-              normalizeDimensionValue(row.User_Sentiment) === next.sentiment;
-            return byRole && byIndustry && bySentiment;
-          })
-          .map((row) => normalizeDimensionValue(row.Query_Length_Category))
-      );
-
-      return {
-        userRole: next.userRole !== ALL_FILTER_VALUE && !validRoles.has(next.userRole) ? ALL_FILTER_VALUE : next.userRole,
-        industry:
-          next.industry !== ALL_FILTER_VALUE && !validIndustries.has(next.industry) ? ALL_FILTER_VALUE : next.industry,
-        sentiment:
-          next.sentiment !== ALL_FILTER_VALUE && !validSentiments.has(next.sentiment) ? ALL_FILTER_VALUE : next.sentiment,
-        queryLength:
-          next.queryLength !== ALL_FILTER_VALUE && !validQueryLengths.has(next.queryLength)
-            ? ALL_FILTER_VALUE
-            : next.queryLength,
-      };
+  const applyGlobalFilter = useCallback(
+    (row: MergedRow, filters: GlobalFilters, excludeKey?: GlobalFilterKey) => {
+      return (Object.keys(FILTER_FIELD_MAP) as GlobalFilterKey[]).every((filterKey) => {
+        if (excludeKey === filterKey) return true;
+        const selected = filters[filterKey];
+        if (selected === ALL_FILTER_VALUE) return true;
+        const field = FILTER_FIELD_MAP[filterKey];
+        return normalizeDimensionValue(row[field]) === selected;
+      });
     },
-    [insightRows]
+    []
   );
 
-  const sanitizeFeedbackFilters = useCallback(
-    (next: FeedbackFilters): FeedbackFilters => {
-      const validFrictions = new Set(
-        feedbackRows
-          .filter((row) => {
-            if (!isValidSignal(row.Friction_Signal)) return false;
-            const byFeature =
-              next.featureRequest === ALL_FILTER_VALUE ||
-              normalizeDimensionValue(row.Feature_Request) === next.featureRequest;
-            return byFeature;
-          })
-          .map((row) => normalizeDimensionValue(row.Friction_Signal))
-      );
-      const validFeatures = new Set(
-        feedbackRows
-          .filter((row) => {
-            if (!isValidSignal(row.Feature_Request)) return false;
-            const byFriction =
-              next.frictionSignal === ALL_FILTER_VALUE ||
-              normalizeDimensionValue(row.Friction_Signal) === next.frictionSignal;
-            return byFriction;
-          })
-          .map((row) => normalizeDimensionValue(row.Feature_Request))
-      );
-
-      return {
-        frictionSignal:
-          next.frictionSignal !== ALL_FILTER_VALUE && !validFrictions.has(next.frictionSignal)
-            ? ALL_FILTER_VALUE
-            : next.frictionSignal,
-        featureRequest:
-          next.featureRequest !== ALL_FILTER_VALUE && !validFeatures.has(next.featureRequest)
-            ? ALL_FILTER_VALUE
-            : next.featureRequest,
-      };
-    },
-    [feedbackRows]
+  const globalFilterMeta = useMemo(
+    () => [
+      { key: "userRole" as const, label: t.filterUserRole },
+      { key: "industry" as const, label: t.filterIndustry },
+      { key: "sentiment" as const, label: t.filterSentiment },
+      { key: "frictionSignal" as const, label: t.filterFrictionSignal },
+      { key: "queryType" as const, label: t.filterQueryType },
+      { key: "queryLength" as const, label: t.filterQueryLength },
+      { key: "language" as const, label: t.filterLanguage },
+      { key: "useCase" as const, label: t.filterUseCase },
+      { key: "featureRequest" as const, label: t.filterFeatureRequest },
+      { key: "outputFormat" as const, label: t.filterOutputFormat },
+      { key: "outputLanguageRegister" as const, label: t.filterOutputLanguageRegister },
+      { key: "safetyFlag" as const, label: t.filterSafetyFlag },
+    ],
+    [
+      t.filterFeatureRequest,
+      t.filterFrictionSignal,
+      t.filterIndustry,
+      t.filterLanguage,
+      t.filterOutputFormat,
+      t.filterOutputLanguageRegister,
+      t.filterQueryLength,
+      t.filterQueryType,
+      t.filterSafetyFlag,
+      t.filterSentiment,
+      t.filterUseCase,
+      t.filterUserRole,
+    ]
   );
 
-  const filteredInsightRows = useMemo(
-    () =>
-      insightRows.filter((row) => {
-        const byRole =
-          insightFilters.userRole === ALL_FILTER_VALUE ||
-          normalizeDimensionValue(row.User_Role) === insightFilters.userRole;
-        const byIndustry =
-          insightFilters.industry === ALL_FILTER_VALUE ||
-          normalizeDimensionValue(row.Industry) === insightFilters.industry;
-        const bySentiment =
-          insightFilters.sentiment === ALL_FILTER_VALUE ||
-          normalizeDimensionValue(row.User_Sentiment) === insightFilters.sentiment;
-        const byQueryLength =
-          insightFilters.queryLength === ALL_FILTER_VALUE ||
-          normalizeDimensionValue(row.Query_Length_Category) === insightFilters.queryLength;
-        return byRole && byIndustry && bySentiment && byQueryLength;
-      }),
-    [insightRows, insightFilters]
+  const globalFilterOptions = useMemo(() => {
+    const options: Record<GlobalFilterKey, FilterOption[]> = {
+      userRole: [],
+      industry: [],
+      sentiment: [],
+      frictionSignal: [],
+      queryType: [],
+      queryLength: [],
+      language: [],
+      useCase: [],
+      featureRequest: [],
+      outputFormat: [],
+      outputLanguageRegister: [],
+      safetyFlag: [],
+    };
+
+    (Object.keys(FILTER_FIELD_MAP) as GlobalFilterKey[]).forEach((filterKey) => {
+      const baseRows = mergedRows.filter((row) => applyGlobalFilter(row, globalFilters, filterKey));
+      options[filterKey] = buildFilterOptions(baseRows, FILTER_FIELD_MAP[filterKey], t.filterAll, t.unknown);
+    });
+
+    return options;
+  }, [applyGlobalFilter, globalFilters, mergedRows, t.filterAll, t.unknown]);
+
+  const filteredMergedRows = useMemo(
+    () => mergedRows.filter((row) => applyGlobalFilter(row, globalFilters)),
+    [applyGlobalFilter, globalFilters, mergedRows]
   );
 
-  const filteredFeedbackRows = useMemo(
-    () =>
-      feedbackRows.filter((row) => {
-        const byFriction =
-          feedbackFilters.frictionSignal === ALL_FILTER_VALUE ||
-          normalizeDimensionValue(row.Friction_Signal) === feedbackFilters.frictionSignal;
-        const byFeature =
-          feedbackFilters.featureRequest === ALL_FILTER_VALUE ||
-          normalizeDimensionValue(row.Feature_Request) === feedbackFilters.featureRequest;
-        return byFriction && byFeature;
-      }),
-    [feedbackFilters, feedbackRows]
-  );
-
-  const roleData = useMemo(() => aggregateAndSortData(filteredInsightRows, "User_Role"), [filteredInsightRows]);
-  const queryTypeData = useMemo(() => aggregateAndSortData(filteredInsightRows, "Query_Type"), [filteredInsightRows]);
+  const roleData = useMemo(() => aggregateAndSortData(filteredMergedRows, "User_Role"), [filteredMergedRows]);
+  const queryTypeData = useMemo(() => aggregateAndSortData(filteredMergedRows, "Query_Type"), [filteredMergedRows]);
   const queryLengthData = useMemo(
-    () => aggregateAndSortData(filteredInsightRows, "Query_Length_Category"),
-    [filteredInsightRows]
+    () => aggregateAndSortData(filteredMergedRows, "Query_Length_Category"),
+    [filteredMergedRows]
   );
-  const industryData = useMemo(() => aggregateAndSortData(filteredInsightRows, "Industry"), [filteredInsightRows]);
-  const sentimentData = useMemo(
-    () => aggregateAndSortData(filteredInsightRows, "User_Sentiment"),
-    [filteredInsightRows]
-  );
-
-  const frictionData = useMemo(
-    () => aggregateAndSortData(filteredFeedbackRows.filter((row) => isValidSignal(row.Friction_Signal)), "Friction_Signal"),
-    [filteredFeedbackRows]
-  );
-  const featureData = useMemo(
-    () => aggregateAndSortData(filteredFeedbackRows.filter((row) => isValidSignal(row.Feature_Request)), "Feature_Request"),
-    [filteredFeedbackRows]
-  );
+  const languageData = useMemo(() => aggregateAndSortData(filteredMergedRows, "Language"), [filteredMergedRows]);
+  const useCaseData = useMemo(() => aggregateAndSortData(filteredMergedRows, "Use_Case"), [filteredMergedRows]);
+  const industryData = useMemo(() => aggregateAndSortData(filteredMergedRows, "Industry"), [filteredMergedRows]);
+  const sentimentData = useMemo(() => aggregateAndSortData(filteredMergedRows, "User_Sentiment"), [filteredMergedRows]);
+  const frictionData = useMemo(() => aggregateAndSortData(filteredMergedRows, "Friction_Signal"), [filteredMergedRows]);
+  const featureData = useMemo(() => aggregateAndSortData(filteredMergedRows, "Feature_Request"), [filteredMergedRows]);
   const safetyData = useMemo(
-    () =>
-      aggregateAndSortData(
-        filteredFeedbackRows.filter((row) => isValidSignal(row.Safety_or_Out_of_Scope_Flag)),
-        "Safety_or_Out_of_Scope_Flag"
-      ),
-    [filteredFeedbackRows]
-  );
-
-  const insightLatestRows = useMemo<InsightLatestItem[]>(
-    () =>
-      insightRows
-        .slice(-5)
-        .reverse()
-        .map((row) => ({
-          query: row.Original_Query || t.emptyData,
-          role: toDisplayLabel(normalizeDimensionValue(row.User_Role), t.unknown),
-          industry: toDisplayLabel(normalizeDimensionValue(row.Industry), t.unknown),
-          sentiment: toDisplayLabel(normalizeDimensionValue(row.User_Sentiment), t.unknown),
-        })),
-    [insightRows, t.emptyData, t.unknown]
-  );
-  const feedbackLatestRows = useMemo<FeedbackLatestItem[]>(
-    () =>
-      feedbackRows
-        .slice(-5)
-        .reverse()
-        .map((row) => ({
-          query: row.Original_Query || t.emptyData,
-          frictionSignal: isValidSignal(row.Friction_Signal)
-            ? row.Friction_Signal
-            : toDisplayLabel(normalizeDimensionValue(row.Friction_Signal), t.unknown),
-          featureRequest: isValidSignal(row.Feature_Request)
-            ? row.Feature_Request
-            : toDisplayLabel(normalizeDimensionValue(row.Feature_Request), t.unknown),
-        })),
-    [feedbackRows, t.emptyData, t.unknown]
+    () => aggregateAndSortData(filteredMergedRows, "Safety_or_Out_of_Scope_Flag"),
+    [filteredMergedRows]
   );
 
   const insightPalette = INSIGHT_COLORS;
   const feedbackPalette = FEEDBACK_COLORS;
-
-  const insightOptionMap = useMemo(
-    () => ({
-      userRole: new Map(insightRoleOptions.map((option) => [option.value, option.label])),
-      industry: new Map(insightIndustryOptions.map((option) => [option.value, option.label])),
-      sentiment: new Map(insightSentimentOptions.map((option) => [option.value, option.label])),
-      queryLength: new Map(insightQueryLengthOptions.map((option) => [option.value, option.label])),
-    }),
-    [insightIndustryOptions, insightQueryLengthOptions, insightRoleOptions, insightSentimentOptions]
-  );
-  const feedbackOptionMap = useMemo(
-    () => ({
-      frictionSignal: new Map(feedbackFrictionOptions.map((option) => [option.value, option.label])),
-      featureRequest: new Map(feedbackFeatureOptions.map((option) => [option.value, option.label])),
-    }),
-    [feedbackFeatureOptions, feedbackFrictionOptions]
-  );
-
-  const activeFilterChips = useMemo(() => {
-    if (activeTab === "insight") {
-      return [
-        insightFilters.userRole !== ALL_FILTER_VALUE
-          ? {
-              key: "userRole",
-              label: t.filterUserRole,
-              value: insightOptionMap.userRole.get(insightFilters.userRole) ?? insightFilters.userRole,
-              onRemove: () => setInsightFilters((prev) => ({ ...prev, userRole: ALL_FILTER_VALUE })),
-            }
-          : null,
-        insightFilters.industry !== ALL_FILTER_VALUE
-          ? {
-              key: "industry",
-              label: t.filterIndustry,
-              value: insightOptionMap.industry.get(insightFilters.industry) ?? insightFilters.industry,
-              onRemove: () => setInsightFilters((prev) => ({ ...prev, industry: ALL_FILTER_VALUE })),
-            }
-          : null,
-        insightFilters.sentiment !== ALL_FILTER_VALUE
-          ? {
-              key: "sentiment",
-              label: t.filterSentiment,
-              value: insightOptionMap.sentiment.get(insightFilters.sentiment) ?? insightFilters.sentiment,
-              onRemove: () => setInsightFilters((prev) => ({ ...prev, sentiment: ALL_FILTER_VALUE })),
-            }
-          : null,
-        insightFilters.queryLength !== ALL_FILTER_VALUE
-          ? {
-              key: "queryLength",
-              label: t.filterQueryLength,
-              value: insightOptionMap.queryLength.get(insightFilters.queryLength) ?? insightFilters.queryLength,
-              onRemove: () => setInsightFilters((prev) => ({ ...prev, queryLength: ALL_FILTER_VALUE })),
-            }
-          : null,
-      ].filter((chip): chip is ActiveFilterChip => chip !== null);
-    }
-
-    return [
-      feedbackFilters.frictionSignal !== ALL_FILTER_VALUE
-        ? {
-            key: "frictionSignal",
-            label: t.filterFrictionSignal,
-            value: feedbackOptionMap.frictionSignal.get(feedbackFilters.frictionSignal) ?? feedbackFilters.frictionSignal,
-            onRemove: () => setFeedbackFilters((prev) => ({ ...prev, frictionSignal: ALL_FILTER_VALUE })),
-          }
-        : null,
-      feedbackFilters.featureRequest !== ALL_FILTER_VALUE
-        ? {
-            key: "featureRequest",
-            label: t.filterFeatureRequest,
-            value: feedbackOptionMap.featureRequest.get(feedbackFilters.featureRequest) ?? feedbackFilters.featureRequest,
-            onRemove: () => setFeedbackFilters((prev) => ({ ...prev, featureRequest: ALL_FILTER_VALUE })),
-          }
-        : null,
-    ].filter((chip): chip is ActiveFilterChip => chip !== null);
-  }, [
-    activeTab,
-    feedbackFilters.featureRequest,
-    feedbackFilters.frictionSignal,
-    feedbackOptionMap.featureRequest,
-    feedbackOptionMap.frictionSignal,
-    insightFilters.industry,
-    insightFilters.queryLength,
-    insightFilters.sentiment,
-    insightFilters.userRole,
-    insightOptionMap.industry,
-    insightOptionMap.queryLength,
-    insightOptionMap.sentiment,
-    insightOptionMap.userRole,
-    t.filterFeatureRequest,
-    t.filterFrictionSignal,
-    t.filterIndustry,
-    t.filterQueryLength,
-    t.filterSentiment,
-    t.filterUserRole,
-  ]);
+  const handleChartElementClick = useCallback((filterKey: GlobalFilterKey, rawValue: unknown) => {
+    const nextValue = normalizeDimensionValue(String(rawValue ?? ""));
+    if (nextValue === UNKNOWN_VALUE || isInvalidDimensionLabel(nextValue)) return;
+    setGlobalFilters((prev) => ({
+      ...prev,
+      [filterKey]: prev[filterKey] === nextValue ? ALL_FILTER_VALUE : nextValue,
+    }));
+  }, []);
 
   const renderGlassTooltip = (props: {
     active?: boolean;
@@ -1211,7 +940,7 @@ export default function HomePage() {
 
   const renderChartLegend = (items: ChartItem[], palette: string[]) => {
     return (
-      <div className="mt-3 grid w-full grid-cols-1 gap-2 rounded-md bg-zinc-50/70 p-2 text-xs text-zinc-700 sm:grid-cols-2">
+      <div className="mt-3 grid max-h-28 w-full grid-cols-1 gap-2 overflow-y-auto rounded-md bg-zinc-50/70 p-2 text-xs text-zinc-700 sm:grid-cols-2">
         {items.map((item, index) => (
           <div key={`legend-${item.name}-${index}`} className="flex min-w-0 items-center gap-1.5">
             <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: palette[index % palette.length] }} />
@@ -1428,192 +1157,81 @@ export default function HomePage() {
               {isDashboardLoading ? <p className="text-sm text-zinc-500">{t.loadingDashboard}</p> : null}
 
               <Tabs value={activeTab} onValueChange={setActiveTab} className="transition-all duration-300">
-                <TabsList className="max-w-xl">
+                <Card className="mt-4 border-zinc-200/70 bg-zinc-50/50 shadow-none">
+                  <CardHeader className="flex flex-row items-center justify-between pb-3">
+                    <CardTitle className="text-sm">{t.filterConsole}</CardTitle>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => setIsFilterExpanded((prev) => !prev)}
+                    >
+                      {isFilterExpanded
+                        ? language === "zh"
+                          ? "收起"
+                          : "Collapse"
+                        : language === "zh"
+                          ? "展开"
+                          : "Expand"}
+                    </Button>
+                  </CardHeader>
+                  {isFilterExpanded ? (
+                    <CardContent className="grid gap-4 grid-cols-2 md:grid-cols-4 xl:grid-cols-6">
+                    {globalFilterMeta.map((meta) => (
+                      <div key={meta.key} className="space-y-2">
+                        <p className="truncate text-xs text-zinc-500" title={meta.label}>
+                          {meta.label}
+                        </p>
+                        <Select
+                          value={globalFilters[meta.key]}
+                          onValueChange={(value) => setGlobalFilters((prev) => ({ ...prev, [meta.key]: value }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder={t.filterAll} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {globalFilterOptions[meta.key].map((option) => (
+                              <SelectItem key={`global-${meta.key}-option-${option.value}`} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ))}
+                    <div className="col-span-2 md:col-span-4 xl:col-span-6">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 text-xs"
+                        onClick={() =>
+                          setGlobalFilters({
+                            userRole: ALL_FILTER_VALUE,
+                            industry: ALL_FILTER_VALUE,
+                            sentiment: ALL_FILTER_VALUE,
+                            frictionSignal: ALL_FILTER_VALUE,
+                            queryType: ALL_FILTER_VALUE,
+                            queryLength: ALL_FILTER_VALUE,
+                            language: ALL_FILTER_VALUE,
+                            useCase: ALL_FILTER_VALUE,
+                            featureRequest: ALL_FILTER_VALUE,
+                            outputFormat: ALL_FILTER_VALUE,
+                            outputLanguageRegister: ALL_FILTER_VALUE,
+                            safetyFlag: ALL_FILTER_VALUE,
+                          })
+                        }
+                      >
+                        {t.clearFilters}
+                      </Button>
+                    </div>
+                    </CardContent>
+                  ) : null}
+                </Card>
+
+                <TabsList className="mt-4 max-w-xl">
                   <TabsTrigger value="insight">{t.insightTab}</TabsTrigger>
                   <TabsTrigger value="feedback">{t.feedbackTab}</TabsTrigger>
                 </TabsList>
-
-                <Card className="mt-4 border-zinc-200/70 bg-zinc-50/50 shadow-none">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm">{t.filterConsole}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    {activeTab === "insight" ? (
-                      <>
-                        <div className="space-y-2">
-                          <p className="text-xs text-zinc-500">{t.filterUserRole}</p>
-                          <Select
-                            value={insightFilters.userRole}
-                            onValueChange={(value) =>
-                              setInsightFilters((prev) => sanitizeInsightFilters({ ...prev, userRole: value }))
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder={t.filterAll} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {insightRoleOptions.map((option) => (
-                                <SelectItem key={`role-option-${option.value}`} value={option.value}>
-                                  {option.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <p className="text-xs text-zinc-500">{t.filterIndustry}</p>
-                          <Select
-                            value={insightFilters.industry}
-                            onValueChange={(value) =>
-                              setInsightFilters((prev) => sanitizeInsightFilters({ ...prev, industry: value }))
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder={t.filterAll} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {insightIndustryOptions.map((option) => (
-                                <SelectItem key={`industry-option-${option.value}`} value={option.value}>
-                                  {option.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <p className="text-xs text-zinc-500">{t.filterSentiment}</p>
-                          <Select
-                            value={insightFilters.sentiment}
-                            onValueChange={(value) =>
-                              setInsightFilters((prev) => sanitizeInsightFilters({ ...prev, sentiment: value }))
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder={t.filterAll} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {insightSentimentOptions.map((option) => (
-                                <SelectItem key={`sentiment-option-${option.value}`} value={option.value}>
-                                  {option.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <p className="text-xs text-zinc-500">{t.filterQueryLength}</p>
-                          <Select
-                            value={insightFilters.queryLength}
-                            onValueChange={(value) =>
-                              setInsightFilters((prev) => sanitizeInsightFilters({ ...prev, queryLength: value }))
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder={t.filterAll} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {insightQueryLengthOptions.map((option) => (
-                                <SelectItem key={`query-length-option-${option.value}`} value={option.value}>
-                                  {option.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="space-y-2">
-                          <p className="text-xs text-zinc-500">{t.filterFrictionSignal}</p>
-                          <Select
-                            value={feedbackFilters.frictionSignal}
-                            onValueChange={(value) =>
-                              setFeedbackFilters((prev) => sanitizeFeedbackFilters({ ...prev, frictionSignal: value }))
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder={t.filterAll} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {feedbackFrictionOptions.map((option) => (
-                                <SelectItem key={`friction-option-${option.value}`} value={option.value}>
-                                  {option.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <p className="text-xs text-zinc-500">{t.filterFeatureRequest}</p>
-                          <Select
-                            value={feedbackFilters.featureRequest}
-                            onValueChange={(value) =>
-                              setFeedbackFilters((prev) => sanitizeFeedbackFilters({ ...prev, featureRequest: value }))
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder={t.filterAll} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {feedbackFeatureOptions.map((option) => (
-                                <SelectItem key={`feature-option-${option.value}`} value={option.value}>
-                                  {option.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </>
-                    )}
-
-                    <div className="space-y-2 md:col-span-2 xl:col-span-3">
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs text-zinc-500">{t.activeFilters}</p>
-                        {activeFilterChips.length > 0 ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 px-2 text-xs"
-                            onClick={() => {
-                              if (activeTab === "insight") {
-                                setInsightFilters({
-                                  userRole: ALL_FILTER_VALUE,
-                                  industry: ALL_FILTER_VALUE,
-                                  sentiment: ALL_FILTER_VALUE,
-                                  queryLength: ALL_FILTER_VALUE,
-                                });
-                                return;
-                              }
-                              setFeedbackFilters({
-                                frictionSignal: ALL_FILTER_VALUE,
-                                featureRequest: ALL_FILTER_VALUE,
-                              });
-                            }}
-                          >
-                            {t.clearFilters}
-                          </Button>
-                        ) : null}
-                      </div>
-                      {activeFilterChips.length === 0 ? (
-                        <div className="text-xs text-zinc-500">{t.filterAll}</div>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {activeFilterChips.map((chip) => (
-                            <div
-                              key={chip.key}
-                              className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-xs text-sky-700"
-                            >
-                              <span className="max-w-[220px] break-all">{chip.label}: {chip.value}</span>
-                              <button type="button" onClick={chip.onRemove} className="opacity-80 hover:opacity-100">
-                                <X className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
 
                 <TabsContent value="insight">
                   <div className="grid gap-6 grid-cols-1 xl:grid-cols-2">
@@ -1637,6 +1255,11 @@ export default function HomePage() {
                                       nameKey="name"
                                       outerRadius={95}
                                       paddingAngle={2}
+                                      labelLine={false}
+                                      label={false}
+                                      onClick={(entry: { name?: string | number }) =>
+                                        handleChartElementClick("userRole", entry?.name)
+                                      }
                                       isAnimationActive
                                       animationDuration={CHART_ANIMATION_MS}
                                       animationEasing="ease-out"
@@ -1677,6 +1300,11 @@ export default function HomePage() {
                                       innerRadius={56}
                                       outerRadius={95}
                                       paddingAngle={2}
+                                      labelLine={false}
+                                      label={false}
+                                      onClick={(entry: { name?: string | number }) =>
+                                        handleChartElementClick("queryType", entry?.name)
+                                      }
                                       isAnimationActive
                                       animationDuration={CHART_ANIMATION_MS}
                                       animationEasing="ease-out"
@@ -1722,6 +1350,11 @@ export default function HomePage() {
                                       innerRadius={56}
                                       outerRadius={95}
                                       paddingAngle={2}
+                                      labelLine={false}
+                                      label={false}
+                                      onClick={(entry: { name?: string | number }) =>
+                                        handleChartElementClick("queryLength", entry?.name)
+                                      }
                                       isAnimationActive
                                       animationDuration={CHART_ANIMATION_MS}
                                       animationEasing="ease-out"
@@ -1740,6 +1373,113 @@ export default function HomePage() {
                                 </ResponsiveContainer>
                               </div>
                               {renderChartLegend(queryLengthData.chartData, insightPalette)}
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="h-full border-zinc-200/80 bg-white/80 shadow-sm">
+                      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+                        <CardTitle className="text-sm">{t.languageChart}</CardTitle>
+                        {renderExcludedBadge(languageData)}
+                      </CardHeader>
+                      <CardContent className="h-full">
+                        <div className="flex min-h-[300px] h-full items-center justify-center">
+                          {languageData.chartData.length === 0 ? (
+                            <div className="flex h-full w-full items-center justify-center text-sm text-zinc-500">{t.emptyData}</div>
+                          ) : (
+                            <div className="min-h-[300px] h-full w-full">
+                              <div className="h-[250px] w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <PieChart margin={{ top: 12, right: 16, bottom: 12, left: 16 }}>
+                                    <Pie
+                                      data={languageData.chartData}
+                                      dataKey="value"
+                                      nameKey="name"
+                                      innerRadius={56}
+                                      outerRadius={95}
+                                      paddingAngle={2}
+                                      labelLine={false}
+                                      label={false}
+                                      onClick={(entry: { name?: string | number }) =>
+                                        handleChartElementClick("language", entry?.name)
+                                      }
+                                      isAnimationActive
+                                      animationDuration={CHART_ANIMATION_MS}
+                                      animationEasing="ease-out"
+                                    >
+                                      {languageData.chartData.map((item, index) => (
+                                        <Cell key={`language-${item.name}`} fill={insightPalette[index % insightPalette.length]} />
+                                      ))}
+                                    </Pie>
+                                    <Tooltip
+                                      content={(props) => renderGlassTooltip({ ...props, total: languageData.totalCount })}
+                                    />
+                                  </PieChart>
+                                </ResponsiveContainer>
+                              </div>
+                              {renderChartLegend(languageData.chartData, insightPalette)}
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="h-full border-zinc-200/80 bg-white/80 shadow-sm">
+                      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+                        <CardTitle className="text-sm">{t.useCaseChart}</CardTitle>
+                        {renderExcludedBadge(useCaseData)}
+                      </CardHeader>
+                      <CardContent className="h-full">
+                        <div className="flex min-h-[300px] h-full items-center justify-center">
+                          {useCaseData.chartData.length === 0 ? (
+                            <div className="flex h-full w-full items-center justify-center text-sm text-zinc-500">{t.emptyData}</div>
+                          ) : (
+                            <div className="min-h-[300px] h-full w-full">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart
+                                  data={useCaseData.chartData}
+                                  layout="vertical"
+                                  margin={{ top: 16, right: 18, bottom: 16, left: 32 }}
+                                >
+                                  <defs>
+                                    <linearGradient id="useCaseGradient" x1="0" y1="0" x2="1" y2="0">
+                                      <stop offset="0%" stopColor="#0f172a" />
+                                      <stop offset="100%" stopColor="#1d4ed8" />
+                                    </linearGradient>
+                                  </defs>
+                                  <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#e4e4e7" />
+                                  <XAxis
+                                    type="number"
+                                    allowDecimals={false}
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fontSize: 12, fill: "#52525b" }}
+                                  />
+                                  <YAxis
+                                    dataKey="name"
+                                    type="category"
+                                    width={140}
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tickFormatter={(value) => formatMetricLabel(String(value ?? ""))}
+                                    tick={{ fontSize: 11, fill: "#52525b" }}
+                                  />
+                                  <Tooltip content={(props) => renderGlassTooltip({ ...props, total: useCaseData.totalCount })} />
+                                  <Bar
+                                    dataKey="value"
+                                    barSize={24}
+                                    radius={[0, 4, 4, 0]}
+                                    fill="url(#useCaseGradient)"
+                                    onClick={(entry: { name?: string; payload?: { name?: string } }) =>
+                                      handleChartElementClick("useCase", entry?.name ?? entry?.payload?.name)
+                                    }
+                                    animationDuration={CHART_ANIMATION_MS}
+                                    animationEasing="ease-out"
+                                  />
+                                </BarChart>
+                              </ResponsiveContainer>
                             </div>
                           )}
                         </div>
@@ -1780,16 +1520,21 @@ export default function HomePage() {
                                   <YAxis
                                     dataKey="name"
                                     type="category"
-                                    width={170}
+                                    width={140}
                                     axisLine={false}
                                     tickLine={false}
-                                    tick={{ fontSize: 12, fill: "#52525b" }}
+                                    tickFormatter={(value) => formatMetricLabel(String(value ?? ""))}
+                                    tick={{ fontSize: 11, fill: "#52525b" }}
                                   />
                                   <Tooltip content={(props) => renderGlassTooltip({ ...props, total: industryData.totalCount })} />
                                   <Bar
                                     dataKey="value"
+                                    barSize={24}
                                     radius={[0, 4, 4, 0]}
                                     fill="url(#industryGradient)"
+                                    onClick={(entry: { name?: string; payload?: { name?: string } }) =>
+                                      handleChartElementClick("industry", entry?.name ?? entry?.payload?.name)
+                                    }
                                     animationDuration={CHART_ANIMATION_MS}
                                     animationEasing="ease-out"
                                   />
@@ -1821,6 +1566,11 @@ export default function HomePage() {
                                       nameKey="name"
                                       outerRadius={95}
                                       paddingAngle={2}
+                                      labelLine={false}
+                                      label={false}
+                                      onClick={(entry: { name?: string | number }) =>
+                                        handleChartElementClick("sentiment", entry?.name)
+                                      }
                                       isAnimationActive
                                       animationDuration={CHART_ANIMATION_MS}
                                       animationEasing="ease-out"
@@ -1846,44 +1596,6 @@ export default function HomePage() {
                     </Card>
                   </div>
 
-                  <Card className="mt-6 border-zinc-200/80 bg-white/80 shadow-sm">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">{t.insightLatestTableTitle}</CardTitle>
-                      <CardDescription>
-                        {t.lastUpdated}：{lastUpdated || "-"}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>{t.columnQuery}</TableHead>
-                            <TableHead>{t.columnRole}</TableHead>
-                            <TableHead>{t.columnIndustry}</TableHead>
-                            <TableHead>{t.columnSentiment}</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {insightLatestRows.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={4} className="text-center text-zinc-500">
-                                {t.emptyData}
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            insightLatestRows.map((row, index) => (
-                              <TableRow key={`${row.query}-${index}`}>
-                                <TableCell className="max-w-[420px] truncate">{row.query}</TableCell>
-                                <TableCell>{row.role}</TableCell>
-                                <TableCell>{row.industry}</TableCell>
-                                <TableCell>{row.sentiment}</TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
-                    </CardContent>
-                  </Card>
                 </TabsContent>
 
                 <TabsContent value="feedback">
@@ -1922,16 +1634,21 @@ export default function HomePage() {
                                   <YAxis
                                     dataKey="name"
                                     type="category"
-                                    width={180}
+                                    width={140}
                                     axisLine={false}
                                     tickLine={false}
-                                    tick={{ fontSize: 12, fill: "#52525b" }}
+                                    tickFormatter={(value) => formatMetricLabel(String(value ?? ""))}
+                                    tick={{ fontSize: 11, fill: "#52525b" }}
                                   />
                                   <Tooltip content={(props) => renderGlassTooltip({ ...props, total: frictionData.totalCount })} />
                                   <Bar
                                     dataKey="value"
+                                    barSize={24}
                                     radius={[0, 4, 4, 0]}
                                     fill="url(#frictionGradient)"
+                                    onClick={(entry: { name?: string; payload?: { name?: string } }) =>
+                                      handleChartElementClick("frictionSignal", entry?.name ?? entry?.payload?.name)
+                                    }
                                     animationDuration={CHART_ANIMATION_MS}
                                     animationEasing="ease-out"
                                   />
@@ -1964,6 +1681,11 @@ export default function HomePage() {
                                       innerRadius={56}
                                       outerRadius={95}
                                       paddingAngle={2}
+                                      labelLine={false}
+                                      label={false}
+                                      onClick={(entry: { name?: string | number }) =>
+                                        handleChartElementClick("featureRequest", entry?.name)
+                                      }
                                       isAnimationActive
                                       animationDuration={CHART_ANIMATION_MS}
                                       animationEasing="ease-out"
@@ -2003,6 +1725,11 @@ export default function HomePage() {
                                       nameKey="name"
                                       outerRadius={95}
                                       paddingAngle={2}
+                                      labelLine={false}
+                                      label={false}
+                                      onClick={(entry: { name?: string | number }) =>
+                                        handleChartElementClick("safetyFlag", entry?.name)
+                                      }
                                       isAnimationActive
                                       animationDuration={CHART_ANIMATION_MS}
                                       animationEasing="ease-out"
@@ -2023,42 +1750,6 @@ export default function HomePage() {
                     </Card>
                   </div>
 
-                  <Card className="mt-6 border-zinc-200/80 bg-white/80 shadow-sm">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">{t.feedbackLatestTableTitle}</CardTitle>
-                      <CardDescription>
-                        {t.lastUpdated}：{lastUpdated || "-"}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>{t.columnQuery}</TableHead>
-                            <TableHead>{t.columnFrictionSignal}</TableHead>
-                            <TableHead>{t.columnFeatureRequest}</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {feedbackLatestRows.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={3} className="text-center text-zinc-500">
-                                {t.emptyData}
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            feedbackLatestRows.map((row, index) => (
-                              <TableRow key={`${row.query}-${index}`}>
-                                <TableCell className="max-w-[460px] truncate">{row.query}</TableCell>
-                                <TableCell>{row.frictionSignal}</TableCell>
-                                <TableCell>{row.featureRequest}</TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
-                    </CardContent>
-                  </Card>
                 </TabsContent>
               </Tabs>
             </CardContent>
