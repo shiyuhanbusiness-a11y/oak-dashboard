@@ -150,6 +150,8 @@ const copy: Record<
     sentimentChart: string;
     frictionChart: string;
     featureChart: string;
+    outputFormatChart: string;
+    outputLanguageChart: string;
     safetyChart: string;
     insightLatestTableTitle: string;
     feedbackLatestTableTitle: string;
@@ -213,6 +215,8 @@ const copy: Record<
     sentimentChart: "User_Sentiment 情绪大盘",
     frictionChart: "Friction_Signal 痛点分布",
     featureChart: "Feature_Request 功能需求",
+    outputFormatChart: "Output_Format 输出格式",
+    outputLanguageChart: "Output_Language 输出语言风格",
     safetyChart: "Safety_or_Out_of_Scope_Flag 异常拦截",
     insightLatestTableTitle: "最新 5 条业务查询明细",
     feedbackLatestTableTitle: "最新 5 条产品反馈明细",
@@ -276,6 +280,8 @@ const copy: Record<
     sentimentChart: "User_Sentiment Overview",
     frictionChart: "Friction_Signal Distribution",
     featureChart: "Feature_Request Demand",
+    outputFormatChart: "Output Format Distribution",
+    outputLanguageChart: "Output Language Register Distribution",
     safetyChart: "Safety_or_Out_of_Scope_Flag",
     insightLatestTableTitle: "Latest 5 Insight Queries",
     feedbackLatestTableTitle: "Latest 5 Feedback Queries",
@@ -877,6 +883,11 @@ export default function HomePage() {
   const sentimentData = useMemo(() => aggregateAndSortData(filteredMergedRows, "User_Sentiment"), [filteredMergedRows]);
   const frictionData = useMemo(() => aggregateAndSortData(filteredMergedRows, "Friction_Signal"), [filteredMergedRows]);
   const featureData = useMemo(() => aggregateAndSortData(filteredMergedRows, "Feature_Request"), [filteredMergedRows]);
+  const outputFormatData = useMemo(() => aggregateAndSortData(filteredMergedRows, "Output_Format"), [filteredMergedRows]);
+  const outputLanguageData = useMemo(
+    () => aggregateAndSortData(filteredMergedRows, "Output_Language_Register"),
+    [filteredMergedRows]
+  );
   const safetyData = useMemo(
     () => aggregateAndSortData(filteredMergedRows, "Safety_or_Out_of_Scope_Flag"),
     [filteredMergedRows]
@@ -1699,6 +1710,105 @@ export default function HomePage() {
                                 </ResponsiveContainer>
                               </div>
                               {renderChartLegend(featureData.chartData, feedbackPalette)}
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="h-full border-zinc-200/80 bg-white/80 shadow-sm">
+                      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+                        <CardTitle className="text-sm">{t.outputFormatChart}</CardTitle>
+                        {renderExcludedBadge(outputFormatData)}
+                      </CardHeader>
+                      <CardContent className="h-full">
+                        <div className="flex min-h-[300px] h-full items-center justify-center">
+                          {outputFormatData.chartData.length === 0 ? (
+                            <div className="flex h-full w-full items-center justify-center text-sm text-zinc-500">{t.emptyData}</div>
+                          ) : (
+                            <div className="min-h-[300px] h-full w-full">
+                              <div className="h-[250px] w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <PieChart margin={{ top: 12, right: 16, bottom: 12, left: 16 }}>
+                                    <Pie
+                                      data={outputFormatData.chartData}
+                                      dataKey="value"
+                                      nameKey="name"
+                                      innerRadius={56}
+                                      outerRadius={95}
+                                      paddingAngle={2}
+                                      labelLine={false}
+                                      label={false}
+                                      onClick={(entry: { name?: string | number }) =>
+                                        handleChartElementClick("outputFormat", entry?.name)
+                                      }
+                                      isAnimationActive
+                                      animationDuration={CHART_ANIMATION_MS}
+                                      animationEasing="ease-out"
+                                    >
+                                      {outputFormatData.chartData.map((item, index) => (
+                                        <Cell
+                                          key={`output-format-${item.name}`}
+                                          fill={feedbackPalette[index % feedbackPalette.length]}
+                                        />
+                                      ))}
+                                    </Pie>
+                                    <Tooltip
+                                      content={(props) => renderGlassTooltip({ ...props, total: outputFormatData.totalCount })}
+                                    />
+                                  </PieChart>
+                                </ResponsiveContainer>
+                              </div>
+                              {renderChartLegend(outputFormatData.chartData, feedbackPalette)}
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="h-full border-zinc-200/80 bg-white/80 shadow-sm">
+                      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+                        <CardTitle className="text-sm">{t.outputLanguageChart}</CardTitle>
+                        {renderExcludedBadge(outputLanguageData)}
+                      </CardHeader>
+                      <CardContent className="h-full">
+                        <div className="flex min-h-[300px] h-full items-center justify-center">
+                          {outputLanguageData.chartData.length === 0 ? (
+                            <div className="flex h-full w-full items-center justify-center text-sm text-zinc-500">{t.emptyData}</div>
+                          ) : (
+                            <div className="min-h-[300px] h-full w-full">
+                              <div className="h-[250px] w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <PieChart margin={{ top: 12, right: 16, bottom: 12, left: 16 }}>
+                                    <Pie
+                                      data={outputLanguageData.chartData}
+                                      dataKey="value"
+                                      nameKey="name"
+                                      outerRadius={95}
+                                      paddingAngle={2}
+                                      labelLine={false}
+                                      label={false}
+                                      onClick={(entry: { name?: string | number }) =>
+                                        handleChartElementClick("outputLanguageRegister", entry?.name)
+                                      }
+                                      isAnimationActive
+                                      animationDuration={CHART_ANIMATION_MS}
+                                      animationEasing="ease-out"
+                                    >
+                                      {outputLanguageData.chartData.map((item, index) => (
+                                        <Cell
+                                          key={`output-language-${item.name}`}
+                                          fill={feedbackPalette[index % feedbackPalette.length]}
+                                        />
+                                      ))}
+                                    </Pie>
+                                    <Tooltip
+                                      content={(props) => renderGlassTooltip({ ...props, total: outputLanguageData.totalCount })}
+                                    />
+                                  </PieChart>
+                                </ResponsiveContainer>
+                              </div>
+                              {renderChartLegend(outputLanguageData.chartData, feedbackPalette)}
                             </div>
                           )}
                         </div>
